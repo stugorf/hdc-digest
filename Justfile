@@ -1,0 +1,151 @@
+# HDC Daily Digest - Justfile
+# Task runner for running the digest and querying the database
+
+# Default recipe: show help
+default:
+    @just --list
+
+# ============================================================================
+# Environment & Setup
+# ============================================================================
+
+# Install dependencies using uv
+setup:
+    uv sync
+
+# Install dependencies and verify environment
+install: setup
+    @echo "Checking environment variables..."
+    @test -n "$$OPENAI_API_KEY" || (echo "WARNING: OPENAI_API_KEY not set" && exit 1)
+    @test -n "$$RESEND_API_KEY" || (echo "WARNING: RESEND_API_KEY not set" && exit 1)
+    @test -n "$$EMAIL_TO" || (echo "WARNING: EMAIL_TO not set" && exit 1)
+    @test -n "$$EMAIL_FROM" || (echo "WARNING: EMAIL_FROM not set" && exit 1)
+    @echo "Environment check complete"
+
+# ============================================================================
+# Running the Digest
+# ============================================================================
+
+# Run the digest and send email
+run:
+    python -m src.run
+
+# Run the digest in dry-run mode (no email sent)
+dry-run:
+    python -m src.run --dry-run
+
+# ============================================================================
+# Database Queries
+# ============================================================================
+
+# Show database statistics
+stats:
+    python -m src.query stats
+
+# List recent items (default: 10)
+list limit="10":
+    python -m src.query list --limit {{limit}}
+
+# List items as JSON
+list-json limit="10":
+    python -m src.query list --limit {{limit}} --json
+
+# List items from a specific section (Papers, News, or Blogs)
+list-section section limit="20":
+    python -m src.query list --section {{section}} --limit {{limit}}
+
+# List items by source type
+list-by-type type limit="20":
+    python -m src.query list --source-type {{type}} --limit {{limit}}
+
+# Show a specific item by URL
+show url:
+    python -m src.query show --url {{url}}
+
+# Get items from a date range (format: YYYY-MM-DD)
+date-range start end:
+    python -m src.query date-range --start {{start}} --end {{end}}
+
+# ============================================================================
+# Development & Quality
+# ============================================================================
+
+# Run linting
+lint:
+    ruff check .
+
+# Format code
+format:
+    ruff format .
+
+# Run linting and formatting
+check: lint format
+
+# Type check (if mypy/pyright configured)
+typecheck:
+    @echo "Type checking not configured. Install mypy or pyright to enable."
+
+# ============================================================================
+# Database Management
+# ============================================================================
+
+# Show database file location and size
+db-info:
+    @if [ -f hdc_digest.db ]; then \
+        echo "Database: hdc_digest.db"; \
+        ls -lh hdc_digest.db; \
+    else \
+        echo "Database not found. Run 'just run' or 'just dry-run' to create it."; \
+    fi
+
+# Backup the database
+db-backup:
+    @if [ -f hdc_digest.db ]; then \
+        cp hdc_digest.db "hdc_digest.db.backup.$$(date +%Y%m%d_%H%M%S)"; \
+        echo "Database backed up"; \
+    else \
+        echo "Database not found. Nothing to backup."; \
+    fi
+
+# ============================================================================
+# Utilities
+# ============================================================================
+
+# Clean temporary files and caches
+clean:
+    rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+    find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# Show help message
+help:
+    @echo "HDC Daily Digest - Available Commands"
+    @echo ""
+    @echo "Setup:"
+    @echo "  just setup          Install dependencies"
+    @echo "  just install        Install and verify environment"
+    @echo ""
+    @echo "Running:"
+    @echo "  just run            Run digest and send email"
+    @echo "  just dry-run        Run digest without sending email"
+    @echo ""
+    @echo "Database Queries:"
+    @echo "  just stats                          Show database statistics"
+    @echo "  just list [limit=10]                List recent items"
+    @echo "  just list-section <section>         List items from section (Papers/News/Blogs)"
+    @echo "  just list-by-type <type>            List items by source type"
+    @echo "  just show <url>                     Show specific item"
+    @echo "  just date-range <start> <end>       Get items from date range"
+    @echo ""
+    @echo "Development:"
+    @echo "  just lint           Run linter"
+    @echo "  just format         Format code"
+    @echo "  just check          Run lint and format"
+    @echo ""
+    @echo "Database:"
+    @echo "  just db-info        Show database info"
+    @echo "  just db-backup      Backup database"
+    @echo ""
+    @echo "Utilities:"
+    @echo "  just clean          Clean temporary files"
+    @echo "  just help           Show this help message"

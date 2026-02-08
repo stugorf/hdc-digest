@@ -1,0 +1,12 @@
+[project]
+name = "hdc-digest-agent"
+version = "0.1.0"
+description = "Daily HDC research digest using OpenAI Agents SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "openai-agents>=0.8.0",
+    "resend>=0.8.0",
+]
+
+[project.scripts]
+hdc-digest = "src.run:main"
