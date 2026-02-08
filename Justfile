@@ -28,11 +28,19 @@ install: setup
 
 # Run the digest and send email
 run:
-    python -m src.run
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.run; \
+    else \
+        uv run python -m src.run; \
+    fi
 
 # Run the digest in dry-run mode (no email sent)
 dry-run:
-    python -m src.run --dry-run
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.run --dry-run; \
+    else \
+        uv run python -m src.run --dry-run; \
+    fi
 
 # ============================================================================
 # Database Queries
@@ -40,31 +48,59 @@ dry-run:
 
 # Show database statistics
 stats:
-    python -m src.query stats
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query stats; \
+    else \
+        uv run python -m src.query stats; \
+    fi
 
 # List recent items (default: 10)
 list limit="10":
-    python -m src.query list --limit {{limit}}
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query list --limit {{limit}}; \
+    else \
+        uv run python -m src.query list --limit {{limit}}; \
+    fi
 
 # List items as JSON
 list-json limit="10":
-    python -m src.query list --limit {{limit}} --json
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query list --limit {{limit}} --json; \
+    else \
+        uv run python -m src.query list --limit {{limit}} --json; \
+    fi
 
 # List items from a specific section (Papers, News, or Blogs)
 list-section section limit="20":
-    python -m src.query list --section {{section}} --limit {{limit}}
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query list --section {{section}} --limit {{limit}}; \
+    else \
+        uv run python -m src.query list --section {{section}} --limit {{limit}}; \
+    fi
 
 # List items by source type
 list-by-type type limit="20":
-    python -m src.query list --source-type {{type}} --limit {{limit}}
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query list --source-type {{type}} --limit {{limit}}; \
+    else \
+        uv run python -m src.query list --source-type {{type}} --limit {{limit}}; \
+    fi
 
 # Show a specific item by URL
 show url:
-    python -m src.query show --url {{url}}
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query show --url {{url}}; \
+    else \
+        uv run python -m src.query show --url {{url}}; \
+    fi
 
 # Get items from a date range (format: YYYY-MM-DD)
 date-range start end:
-    python -m src.query date-range --start {{start}} --end {{end}}
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.query date-range --start {{start}} --end {{end}}; \
+    else \
+        uv run python -m src.query date-range --start {{start}} --end {{end}}; \
+    fi
 
 # ============================================================================
 # Development & Quality
