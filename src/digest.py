@@ -37,6 +37,7 @@ class DigestSection:
     name: str
     query: str
     items: List[DigestItem]
+    dropped_items: List[DigestItem] = field(default_factory=list)
 
 
 @dataclass
@@ -408,13 +409,21 @@ INPUT:
     gated = _extract_json(result.final_output)
     gate_duration = time.time() - gate_start
 
-    gated["items"] = [
+    # Separate kept and dropped items
+    kept_items = [
         it for it in gated.get("items", [])
         if it.get("quality", {}).get("verdict") == "KEEP"
     ]
+    dropped_items = [
+        it for it in gated.get("items", [])
+        if it.get("quality", {}).get("verdict") == "DROP"
+    ]
     
-    kept_count = len(gated["items"])
-    dropped_count = initial_count - kept_count
+    gated["items"] = kept_items
+    gated["dropped_items"] = dropped_items
+    
+    kept_count = len(kept_items)
+    dropped_count = len(dropped_items)
     logger.info(f"✅ Quality gate complete: {section_name} ({kept_count} kept, {dropped_count} dropped, {gate_duration:.2f}s)")
     
     return gated
@@ -424,7 +433,7 @@ INPUT:
 # Main digest
 # -----------------------------
 
-def run_digest(days_back: int = 3, max_items_per_section: int = 8) -> DigestResult:
+def run_digest(days_back: int = 1, max_items_per_section: int = 8) -> DigestResult:
     overall_start = time.time()
     logger.info("=" * 80)
     logger.info("🚀 Starting HDC Daily Digest generation")
@@ -454,6 +463,15 @@ def run_digest(days_back: int = 3, max_items_per_section: int = 8) -> DigestResu
     gated = [_quality_gate_section(agent, s) for s in raw]
     logger.info("✅ All quality gates completed")
 
+    # Extract dropped items before synthesis (they don't need theme synthesis)
+    dropped_by_section = {s["name"]: s.get("dropped_items", []) for s in gated}
+    
+    # Prepare sections for synthesis (only kept items)
+    sections_for_synth = [
+        {k: v for k, v in s.items() if k != "dropped_items"}
+        for s in gated
+    ]
+
     logger.info("📝 Synthesizing themes...")
     synth_start = time.time()
     synth_prompt = f"""
@@ -463,7 +481,7 @@ Return ONLY JSON:
 {{
   "date_utc": "YYYY-MM-DD",
   "top_themes": ["...", "..."],
-  "sections": {json.dumps(gated)}
+  "sections": {json.dumps(sections_for_synth, default=str)}
 }}
 """
     synth = Runner.run_sync(agent, synth_prompt)
@@ -473,11 +491,17 @@ Return ONLY JSON:
 
     sections: List[DigestSection] = []
     for s in data["sections"]:
+        section_name = s["name"]
         items = [
             DigestItem(**_normalize_item(it))
             for it in s.get("items", [])
         ]
-        sections.append(DigestSection(s["name"], s["query"], items))
+        # Restore dropped items from before synthesis
+        dropped_items = [
+            DigestItem(**_normalize_item(it))
+            for it in dropped_by_section.get(section_name, [])
+        ]
+        sections.append(DigestSection(section_name, s["query"], items, dropped_items))
 
     total_duration = time.time() - overall_start
     total_items = sum(len(s.items) for s in sections)

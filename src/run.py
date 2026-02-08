@@ -22,12 +22,18 @@ def main():
         action="store_true",
         help="Generate digest and save to database, but do not send email"
     )
+    parser.add_argument(
+        "--days-back",
+        type=int,
+        default=1,
+        help="Number of days to search back (default: 1, reduces OpenAI costs)"
+    )
     args = parser.parse_args()
     
     try:
         # Generate digest
         logger.info("Starting digest workflow...")
-        digest = run_digest()
+        digest = run_digest(days_back=args.days_back)
 
         # Filter out already-seen items
         logger.info("Filtering already-seen items...")
@@ -58,11 +64,13 @@ def main():
                 "date_utc": digest.date_utc,
                 "duration_seconds": digest.duration_seconds,
                 "total_items": sum(len(s.items) for s in digest.sections),
+                "total_dropped": sum(len(s.dropped_items) for s in digest.sections),
                 "sections": [
                     {
                         "name": s.name,
                         "query": s.query,
-                        "item_count": len(s.items)
+                        "item_count": len(s.items),
+                        "dropped_count": len(s.dropped_items)
                     }
                     for s in digest.sections
                 ],
@@ -70,6 +78,10 @@ def main():
             }
             print("\nJSON Summary:")
             print(json.dumps(summary, indent=2))
+            
+            # Output full JSON with dropped items
+            print("\nFull JSON (including dropped items):")
+            print(json.dumps(digest.to_dict(), indent=2, default=str))
         else:
             # Send digest email (will include "No new items today" if empty)
             logger.info("Sending digest email...")
