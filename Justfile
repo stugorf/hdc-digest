@@ -42,6 +42,42 @@ dry-run days_back="2":
         uv run python -m src.run --dry-run --days-back {{days_back}}; \
     fi
 
+# Generate daily digest and open email preview in browser (no email sent)
+preview days_back="2":
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.run --preview --days-back {{days_back}}; \
+    else \
+        uv run python -m src.run --preview --days-back {{days_back}}; \
+    fi
+
+# ============================================================================
+# Weekly Trends Analysis
+# ============================================================================
+
+# Run trends analysis and send weekly email
+trends weeks_back="52" top_n="15" period_type="week":
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.trends_run --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    else \
+        uv run python -m src.trends_run --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    fi
+
+# Run trends analysis in dry-run mode (no email sent)
+trends-dry-run weeks_back="52" top_n="15" period_type="week":
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.trends_run --dry-run --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    else \
+        uv run python -m src.trends_run --dry-run --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    fi
+
+# Generate trends email and open preview in browser (no email sent)
+trends-preview weeks_back="52" top_n="15" period_type="week":
+    @if [ -f .env ]; then \
+        set -a && source .env && set +a && uv run python -m src.trends_run --preview --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    else \
+        uv run python -m src.trends_run --preview --weeks-back {{weeks_back}} --top-n {{top_n}} --period-type {{period_type}}; \
+    fi
+
 # ============================================================================
 # Database Queries
 # ============================================================================
@@ -125,6 +161,10 @@ typecheck:
 # Database Management
 # ============================================================================
 
+# Seed database with sample HDC items for local testing (trends, previews)
+seed:
+    uv run python -m src.seed_sample_data
+
 # Show database file location and size
 db-info:
     @if [ -f hdc_digest.db ]; then \
@@ -164,6 +204,10 @@ help:
     @echo "Running:"
     @echo "  just run            Run digest and send email"
     @echo "  just dry-run        Run digest without sending email"
+    @echo "  just preview        Generate digest and open email preview in browser"
+    @echo "  just trends         Run weekly trends analysis and send email"
+    @echo "  just trends-dry-run Run trends analysis without sending email"
+    @echo "  just trends-preview Generate trends email and open preview in browser"
     @echo ""
     @echo "Database Queries:"
     @echo "  just stats                          Show database statistics"
@@ -179,6 +223,7 @@ help:
     @echo "  just check          Run lint and format"
     @echo ""
     @echo "Database:"
+    @echo "  just seed           Seed database with sample data for testing"
     @echo "  just db-info        Show database info"
     @echo "  just db-backup      Backup database"
     @echo ""

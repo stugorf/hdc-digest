@@ -2,6 +2,8 @@ import argparse
 import json
 import logging
 import sys
+import webbrowser
+from pathlib import Path
 from .digest import run_digest
 from .store import load_seen_urls, filter_new, save_items
 from .emailer import send_digest_email, send_error_email, render_email
@@ -28,6 +30,11 @@ def main():
         default=2,
         help="Number of days to search back (default: 2, provides overlap to catch late-indexed items)"
     )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Generate digest, save email HTML to file and open in browser (implies dry-run)"
+    )
     args = parser.parse_args()
     
     try:
@@ -48,40 +55,55 @@ def main():
         save_items(digest)
         logger.info("✅ Items saved to database")
 
-        if args.dry_run:
-            # Dry run: print email content instead of sending
-            print("=" * 80)
-            print("DRY RUN MODE - Email would be sent with the following content:")
-            print("=" * 80)
-            print(render_email(digest))
-            print("=" * 80)
-            print(f"Total items in digest: {sum(len(s.items) for s in digest.sections)}")
-            print(f"Duration: {digest.duration_seconds:.2f}s")
-            print("=" * 80)
+        if args.dry_run or args.preview:
+            html_body = render_email(digest)
+            if args.preview:
+                preview_path = Path("email-preview.html")
+                full_html = (
+                    '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+                    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                    '<title>HDC Daily Digest – Preview</title>'
+                    '</head><body style="font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 1rem;">'
+                    + html_body
+                    + "</body></html>"
+                )
+                preview_path.write_text(full_html, encoding="utf-8")
+                abs_path = preview_path.resolve()
+                logger.info("Wrote %s", abs_path)
+                webbrowser.open(abs_path.as_uri())
+            else:
+                # Dry run: print email content instead of sending
+                print("=" * 80)
+                print("DRY RUN MODE - Email would be sent with the following content:")
+                print("=" * 80)
+                print(html_body)
+                print("=" * 80)
+                print(f"Total items in digest: {sum(len(s.items) for s in digest.sections)}")
+                print(f"Duration: {digest.duration_seconds:.2f}s")
+                print("=" * 80)
             
-            # Also output JSON summary with duration
-            summary = {
-                "date_utc": digest.date_utc,
-                "duration_seconds": digest.duration_seconds,
-                "total_items": sum(len(s.items) for s in digest.sections),
-                "total_dropped": sum(len(s.dropped_items) for s in digest.sections),
-                "sections": [
-                    {
-                        "name": s.name,
-                        "query": s.query,
-                        "item_count": len(s.items),
-                        "dropped_count": len(s.dropped_items)
-                    }
-                    for s in digest.sections
-                ],
-                "top_themes": digest.top_themes
-            }
-            print("\nJSON Summary:")
-            print(json.dumps(summary, indent=2))
-            
-            # Output full JSON with dropped items
-            print("\nFull JSON (including dropped items):")
-            print(json.dumps(digest.to_dict(), indent=2, default=str))
+            if not args.preview:
+                # Also output JSON summary with duration
+                summary = {
+                    "date_utc": digest.date_utc,
+                    "duration_seconds": digest.duration_seconds,
+                    "total_items": sum(len(s.items) for s in digest.sections),
+                    "total_dropped": sum(len(s.dropped_items) for s in digest.sections),
+                    "sections": [
+                        {
+                            "name": s.name,
+                            "query": s.query,
+                            "item_count": len(s.items),
+                            "dropped_count": len(s.dropped_items)
+                        }
+                        for s in digest.sections
+                    ],
+                    "top_themes": digest.top_themes
+                }
+                print("\nJSON Summary:")
+                print(json.dumps(summary, indent=2))
+                print("\nFull JSON (including dropped items):")
+                print(json.dumps(digest.to_dict(), indent=2, default=str))
         else:
             # Send digest email (will include "No new items today" if empty)
             logger.info("Sending digest email...")
@@ -90,7 +112,7 @@ def main():
         
     except Exception as e:
         logger.error(f"❌ Error occurred: {e}", exc_info=True)
-        if args.dry_run:
+        if args.dry_run or args.preview:
             # In dry-run mode, just print the error instead of sending email
             print(f"ERROR: {e}", file=sys.stderr)
             import traceback

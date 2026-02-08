@@ -17,12 +17,6 @@ def render_email(digest: DigestResult) -> str:
     """Render digest as HTML email content."""
     html_content = [f"<h1>HDC Daily Digest</h1><p>Date: {_escape_html(digest.date_utc)}</p>"]
 
-    if digest.top_themes:
-        html_content.append("<h2>Top themes</h2><ul>")
-        for theme in digest.top_themes:
-            html_content.append(f"<li>{_escape_html(theme)}</li>")
-        html_content.append("</ul><hr/>")
-
     total = 0
     for sec in digest.sections:
         if not sec.items:
