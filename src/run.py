@@ -25,8 +25,8 @@ def main():
     parser.add_argument(
         "--days-back",
         type=int,
-        default=1,
-        help="Number of days to search back (default: 1, reduces OpenAI costs)"
+        default=2,
+        help="Number of days to search back (default: 2, provides overlap to catch late-indexed items)"
     )
     args = parser.parse_args()
     

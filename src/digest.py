@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from agents import Agent, Runner, WebSearchTool
@@ -323,6 +323,11 @@ def _run_section(agent: Agent, name: str, query: str, days_back: int, max_items:
     logger.info(f"🔍 Searching section: {name}")
     logger.info(f"   Query: {query}")
     
+    # Calculate explicit date range for better search precision
+    today = datetime.now(timezone.utc).date()
+    start_date = today - timedelta(days=days_back - 1)  # Include today in the range
+    end_date = today
+    
     prompt = f"""
 SECTION: {name}
 
@@ -348,7 +353,8 @@ Return ONLY valid JSON:
 }}
 
 Rules:
-- Focus on last {days_back} days
+- Search for content published between {start_date.isoformat()} and {end_date.isoformat()} (last {days_back} days, inclusive)
+- Prefer items published on {end_date.isoformat()} (today) or {start_date.isoformat()}
 - Max {max_items} items
 - Drop weak or tangential matches
 - JSON only

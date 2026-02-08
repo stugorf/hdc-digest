@@ -27,7 +27,7 @@ install: setup
 # ============================================================================
 
 # Run the digest and send email
-run days_back="1":
+run days_back="2":
     @if [ -f .env ]; then \
         set -a && source .env && set +a && uv run python -m src.run --days-back {{days_back}}; \
     else \
@@ -35,7 +35,7 @@ run days_back="1":
     fi
 
 # Run the digest in dry-run mode (no email sent)
-dry-run days_back="1":
+dry-run days_back="2":
     @if [ -f .env ]; then \
         set -a && source .env && set +a && uv run python -m src.run --dry-run --days-back {{days_back}}; \
     else \
