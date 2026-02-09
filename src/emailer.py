@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import cast
 import resend
-from .digest import DigestResult
+from .digest import DigestItem, DigestResult
 
 
 def _escape_html(text: str) -> str:
@@ -13,10 +13,38 @@ def _escape_html(text: str) -> str:
     return html.escape(text)
 
 
+def _render_item(
+    item: DigestItem,
+    show_quality: bool = False,
+) -> str:
+    """Render a single digest item as HTML. Optionally include quality gate info."""
+    title = _escape_html(item.title)
+    url = _escape_html(item.url)
+    published = _escape_html(item.published_date) if item.published_date else "—"
+    publisher = _escape_html(item.publisher)
+    summary = _escape_html(item.summary)
+    parts = [
+        f"<h3><a href=\"{url}\">{title}</a></h3>",
+        f"<p><b>Published:</b> {published} | {publisher}</p>",
+        f"<p>{summary}</p>",
+    ]
+    if show_quality and item.quality:
+        q = item.quality
+        verdict = _escape_html(q.get("verdict", ""))
+        confidence = _escape_html(q.get("confidence", ""))
+        reason = _escape_html(q.get("reason", ""))
+        parts.append(
+            f"<p><b>Quality gate:</b> {verdict} ({confidence}) — {reason}</p>"
+        )
+    parts.append("<hr/>")
+    return "\n              ".join(parts)
+
+
 def render_email(digest: DigestResult) -> str:
-    """Render digest as HTML email content."""
+    """Render digest as HTML email content. Kept items first, then dropped items for review."""
     html_content = [f"<h1>HDC Daily Digest</h1><p>Date: {_escape_html(digest.date_utc)}</p>"]
 
+    # --- Kept items (main digest) ---
     total = 0
     for sec in digest.sections:
         if not sec.items:
@@ -24,22 +52,25 @@ def render_email(digest: DigestResult) -> str:
         html_content.append(f"<h2>{_escape_html(sec.name)}</h2>")
         for item in sec.items:
             total += 1
-            # Escape all user-provided content
-            title = _escape_html(item.title)
-            url = _escape_html(item.url)
-            published = _escape_html(item.published_date) if item.published_date else "—"
-            publisher = _escape_html(item.publisher)
-            summary = _escape_html(item.summary)
-            
-            html_content.append(f"""
-              <h3><a href="{url}">{title}</a></h3>
-              <p><b>Published:</b> {published} | {publisher}</p>
-              <p>{summary}</p>
-              <hr/>
-            """)
+            html_content.append(_render_item(item, show_quality=False))
 
     if total == 0:
         html_content.append("<p>No new items today.</p>")
+
+    # --- Dropped items (for review) ---
+    total_dropped = sum(len(sec.dropped_items) for sec in digest.sections)
+    if total_dropped > 0:
+        html_content.append("<h2>Dropped items (for review)</h2>")
+        html_content.append(
+            "<p>Items below were found by search but did not pass the HDC relevance quality gate. "
+            "Included so you can review what was filtered and evaluate the gate.</p>"
+        )
+        for sec in digest.sections:
+            if not sec.dropped_items:
+                continue
+            html_content.append(f"<h3>{_escape_html(sec.name)}</h3>")
+            for item in sec.dropped_items:
+                html_content.append(_render_item(item, show_quality=True))
 
     return "".join(html_content)
 

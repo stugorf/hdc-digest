@@ -25,30 +25,26 @@ install: setup
 # ============================================================================
 # Running the Digest
 # ============================================================================
+# Requires OPENAI_API_KEY (in .env or environment). Optional: RESEND_API_KEY,
+# EMAIL_FROM, EMAIL_TO for sending email. Load .env from project root if present.
 
 # Run the digest and send email
 run days_back="2":
-    @if [ -f .env ]; then \
-        set -a && source .env && set +a && uv run python -m src.run --days-back {{days_back}}; \
-    else \
-        uv run python -m src.run --days-back {{days_back}}; \
-    fi
+    @if [ -f .env ]; then set -a && . ./.env && set +a; fi; \
+    test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set. Create a .env file or export OPENAI_API_KEY, then run again." && exit 1); \
+    uv run python -m src.run --days-back {{days_back}}
 
 # Run the digest in dry-run mode (no email sent)
 dry-run days_back="2":
-    @if [ -f .env ]; then \
-        set -a && source .env && set +a && uv run python -m src.run --dry-run --days-back {{days_back}}; \
-    else \
-        uv run python -m src.run --dry-run --days-back {{days_back}}; \
-    fi
+    @if [ -f .env ]; then set -a && . ./.env && set +a; fi; \
+    test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set. Create a .env file or export OPENAI_API_KEY, then run again." && exit 1); \
+    uv run python -m src.run --dry-run --days-back {{days_back}}
 
 # Generate daily digest and open email preview in browser (no email sent)
 preview days_back="2":
-    @if [ -f .env ]; then \
-        set -a && source .env && set +a && uv run python -m src.run --preview --days-back {{days_back}}; \
-    else \
-        uv run python -m src.run --preview --days-back {{days_back}}; \
-    fi
+    @if [ -f .env ]; then set -a && . ./.env && set +a; fi; \
+    test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set. Create a .env file or export OPENAI_API_KEY, then run again." && exit 1); \
+    uv run python -m src.run --preview --days-back {{days_back}}
 
 # ============================================================================
 # Weekly Trends Analysis
