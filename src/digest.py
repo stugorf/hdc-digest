@@ -256,6 +256,28 @@ def _extract_json(text: str) -> Dict[str, Any]:
                                     return parsed
                             except (json.JSONDecodeError, ValueError):
                                 continue
+                        # Section-style JSON with extra "note" key: extract up to end of "items": []
+                        if '"items":' in json_str:
+                            items_start = json_str.find('"items":')
+                            bracket_open = json_str.find('[', items_start)
+                            if bracket_open != -1:
+                                depth = 1
+                                i = bracket_open + 1
+                                while i < len(json_str) and depth > 0:
+                                    if json_str[i] == '[':
+                                        depth += 1
+                                    elif json_str[i] == ']':
+                                        depth -= 1
+                                    i += 1
+                                if depth == 0:
+                                    end_items = i - 1
+                                    truncated = json_str[: end_items + 1] + '}'
+                                    try:
+                                        parsed = json.loads(truncated)
+                                        logger.debug("Successfully extracted JSON by truncating after items array")
+                                        return parsed
+                                    except json.JSONDecodeError:
+                                        pass
                         break
     
     # Last resort: try to find and extract any JSON-like structure
@@ -342,21 +364,22 @@ Return ONLY valid JSON:
   "query": "{query}",
   "items": [
     {{
-      "title": "...",
-      "published_date": "YYYY-MM-DD or empty",
-      "url": "...",
-      "summary": "2–4 factual sentences",
+      "title": "exact title of the item",
+      "published_date": "YYYY-MM-DD or empty string if unknown",
+      "url": "full URL to the item (required; use the actual link from search results)",
+      "summary": "2–4 factual sentences describing the content (required for every item)",
       "source_type": "{'paper' if name=='Papers' else ('news' if name=='News' else 'blog')}",
-      "publisher": "publisher or empty"
+      "publisher": "publisher/site name or empty"
     }}
   ]
 }}
 
 Rules:
-- Search for content published between {start_date.isoformat()} and {end_date.isoformat()} (last {days_back} days, inclusive)
-- Prefer items published on {end_date.isoformat()} (today) or {start_date.isoformat()}
+- Prefer content from the last {days_back} days ({start_date.isoformat()} to {end_date.isoformat()}), but include any recently found HDC-relevant items even if the exact publish date is unknown (leave published_date empty in that case).
 - Max {max_items} items
 - Drop weak or tangential matches
+- For every item you must provide: title, url (the real link), and summary. published_date and publisher can be empty if unknown.
+- Return only the JSON object with keys name, query, items. Do not add "note" or any other keys.
 - JSON only
 """
     section_start = time.time()
@@ -386,18 +409,19 @@ Mark:
 - KEEP if clearly HDC/VSA
 - DROP otherwise
 
-Return ONLY JSON:
+Return ONLY JSON. You must preserve every item exactly as given (same title, url, summary, published_date, source_type, publisher) and only add the "quality" object to each item. Do not omit or shorten any field.
+
 {{
   "name": "{section['name']}",
   "query": "{section['query']}",
   "items": [
     {{
-      "title": "...",
-      "published_date": "...",
-      "url": "...",
-      "summary": "...",
-      "source_type": "...",
-      "publisher": "...",
+      "title": "(copy from input)",
+      "published_date": "(copy from input)",
+      "url": "(copy from input)",
+      "summary": "(copy from input)",
+      "source_type": "(copy from input)",
+      "publisher": "(copy from input)",
       "quality": {{
         "verdict": "KEEP|DROP",
         "confidence": "high|medium|low",
@@ -483,29 +507,32 @@ def run_digest(days_back: int = 1, max_items_per_section: int = 8) -> DigestResu
     synth_prompt = f"""
 Summarize the main themes across the sections below.
 
-Return ONLY JSON:
+Return ONLY JSON with exactly these two keys (no other keys, no sections):
 {{
   "date_utc": "YYYY-MM-DD",
-  "top_themes": ["...", "..."],
-  "sections": {json.dumps(sections_for_synth, default=str)}
+  "top_themes": ["theme1", "theme2", "..."]
 }}
+
+Sections (for context only; do not echo back):
+{json.dumps(sections_for_synth, default=str)}
 """
     synth = Runner.run_sync(agent, synth_prompt)
     data = _extract_json(synth.final_output)
     synth_duration = time.time() - synth_start
     logger.info(f"✅ Theme synthesis completed in {synth_duration:.2f}s")
 
+    # Build sections from gated data so url, published_date, summary are preserved.
+    # Synthesis only provides date_utc and top_themes; the LLM must not rewrite items.
     sections: List[DigestSection] = []
-    for s in data["sections"]:
+    for s in gated:
         section_name = s["name"]
         items = [
             DigestItem(**_normalize_item(it))
             for it in s.get("items", [])
         ]
-        # Restore dropped items from before synthesis
         dropped_items = [
             DigestItem(**_normalize_item(it))
-            for it in dropped_by_section.get(section_name, [])
+            for it in s.get("dropped_items", [])
         ]
         sections.append(DigestSection(section_name, s["query"], items, dropped_items))
 

@@ -40,8 +40,9 @@ dry-run days_back="2":
     test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set. Create a .env file or export OPENAI_API_KEY, then run again." && exit 1); \
     uv run python -m src.run --dry-run --days-back {{days_back}}
 
-# Generate daily digest and open email preview in browser (no email sent)
-preview days_back="2":
+# Generate daily digest and open email preview in browser (no email sent).
+# Use days_back=7 (or more) locally to see more items; CI uses 2.
+preview days_back="7":
     @if [ -f .env ]; then set -a && . ./.env && set +a; fi; \
     test -n "$$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set. Create a .env file or export OPENAI_API_KEY, then run again." && exit 1); \
     uv run python -m src.run --preview --days-back {{days_back}}
@@ -169,6 +170,11 @@ db-info:
     else \
         echo "Database not found. Run 'just run' or 'just dry-run' to create it."; \
     fi
+
+# Purge the local database (delete all data; schema recreated on next run)
+db-purge:
+    rm -f hdc_digest.db
+    @echo "Database purged. Run 'just run' or 'just preview' to create a fresh DB."
 
 # Backup the database
 db-backup:

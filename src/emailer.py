@@ -19,12 +19,17 @@ def _render_item(
 ) -> str:
     """Render a single digest item as HTML. Optionally include quality gate info."""
     title = _escape_html(item.title)
-    url = _escape_html(item.url)
-    published = _escape_html(item.published_date) if item.published_date else "—"
-    publisher = _escape_html(item.publisher)
-    summary = _escape_html(item.summary)
+    url = (item.url or "").strip()
+    if url:
+        url_escaped = _escape_html(url)
+        title_block = f"<h3><a href=\"{url_escaped}\">{title}</a></h3>"
+    else:
+        title_block = f"<h3>{title}</h3>"
+    published = _escape_html(item.published_date) if (item.published_date and item.published_date.strip()) else "—"
+    publisher = _escape_html(item.publisher or "")
+    summary = _escape_html(item.summary) if (item.summary and item.summary.strip()) else "(No summary)"
     parts = [
-        f"<h3><a href=\"{url}\">{title}</a></h3>",
+        title_block,
         f"<p><b>Published:</b> {published} | {publisher}</p>",
         f"<p>{summary}</p>",
     ]
