@@ -301,6 +301,35 @@ def _extract_json(text: str) -> Dict[str, Any]:
 
 
 # -----------------------------
+# Date filtering
+# -----------------------------
+
+def _parse_date(s: Optional[str]) -> Optional[datetime]:
+    """Parse YYYY-MM-DD to date; return None if missing or invalid."""
+    if not s or not isinstance(s, str):
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _is_within_days_back(published_date_str: Optional[str], days_back: int) -> bool:
+    """True if no date, or parsed date is within the last days_back days (inclusive of today)."""
+    if days_back <= 0:
+        return True
+    d = _parse_date(published_date_str)
+    if d is None:
+        return True  # keep items with unknown date
+    today = datetime.now(timezone.utc).date()
+    cutoff = today - timedelta(days=days_back)
+    return d.date() >= cutoff
+
+
+# -----------------------------
 # Field normalization
 # -----------------------------
 
@@ -350,10 +379,16 @@ def _run_section(agent: Agent, name: str, query: str, days_back: int, max_items:
     start_date = today - timedelta(days=days_back - 1)  # Include today in the range
     end_date = today
     
+    # Papers: instruct agent to also use Google Scholar and arXiv
+    search_instruction = (
+        "Run a web search and also search Google Scholar (https://scholar.google.com) and arXiv (https://arxiv.org) for academic papers. "
+        if name == "Papers" else "Run a web search for the query below. "
+    )
+
     prompt = f"""
 SECTION: {name}
 
-Run a web search for the query below.
+{search_instruction}
 
 QUERY:
 {query}
@@ -375,7 +410,7 @@ Return ONLY valid JSON:
 }}
 
 Rules:
-- Prefer content from the last {days_back} days ({start_date.isoformat()} to {end_date.isoformat()}), but include any recently found HDC-relevant items even if the exact publish date is unknown (leave published_date empty in that case).
+- Include only items published or posted within the last {days_back} days ({start_date.isoformat()} to {end_date.isoformat()}). If the publish date is unknown, you may include the item (leave published_date empty); if the date is known and older than this window, do not include it.
 - Max {max_items} items
 - Drop weak or tangential matches
 - For every item you must provide: title, url (the real link), and summary. published_date and publisher can be empty if unknown.
@@ -522,14 +557,14 @@ Sections (for context only; do not echo back):
     logger.info(f"✅ Theme synthesis completed in {synth_duration:.2f}s")
 
     # Build sections from gated data so url, published_date, summary are preserved.
-    # Synthesis only provides date_utc and top_themes; the LLM must not rewrite items.
+    # Filter out items with published_date older than days_back (keep items with no date).
+    cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=days_back)).isoformat()
+    logger.info(f"📅 Filtering items: only keep published_date >= {cutoff_date} or unknown")
     sections: List[DigestSection] = []
     for s in gated:
         section_name = s["name"]
-        items = [
-            DigestItem(**_normalize_item(it))
-            for it in s.get("items", [])
-        ]
+        kept_raw = [it for it in s.get("items", []) if _is_within_days_back(it.get("published_date"), days_back)]
+        items = [DigestItem(**_normalize_item(it)) for it in kept_raw]
         dropped_items = [
             DigestItem(**_normalize_item(it))
             for it in s.get("dropped_items", [])
