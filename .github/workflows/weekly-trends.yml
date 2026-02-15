@@ -24,6 +24,12 @@ jobs:
         run: |
           uv sync
 
+      - name: Restore digest database
+        uses: actions/cache/restore@v4
+        with:
+          path: hdc_digest.db
+          key: hdc-digest-db
+
       - name: Run trends analysis
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

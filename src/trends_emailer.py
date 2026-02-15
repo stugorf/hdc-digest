@@ -184,7 +184,13 @@ def render_trends_email(analysis: TrendAnalysis, chart_base64: Optional[str] = N
     html_content.append(f"<p>Total topics tracked: {total_topics}</p>")
     html_content.append(f"<p>Active topics: {active_topics}</p>")
     html_content.append(f"<p>Inactive topics: {total_topics - active_topics}</p>")
-    
+    if total_topics == 0:
+        html_content.append(
+            "<p><em>No trend data yet. The weekly digest reads from the same database as the daily digest. "
+            "If this is the first run or the database was empty, run the daily digest to populate it; "
+            "topics will appear once items have been collected.</em></p>"
+        )
+
     return "".join(html_content)
 
 

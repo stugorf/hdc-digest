@@ -15,6 +15,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Restore digest database
+        uses: actions/cache/restore@v4
+        with:
+          path: hdc_digest.db
+          key: hdc-digest-db
+
       - name: Install
         run: |
           pip install --upgrade pip
@@ -27,3 +33,9 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: python -m src.run --days-back 2
+
+      - name: Save digest database
+        uses: actions/cache/save@v4
+        with:
+          path: hdc_digest.db
+          key: hdc-digest-db
