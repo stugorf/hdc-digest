@@ -19,7 +19,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: hdc_digest.db
-          key: hdc-digest-db
+          key: hdc-digest-db-${{ github.run_id }}
+          restore-keys: |
+            hdc-digest-db-
 
       - name: Install
         run: |
@@ -38,4 +40,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: hdc_digest.db
-          key: hdc-digest-db
+          key: hdc-digest-db-${{ github.run_id }}

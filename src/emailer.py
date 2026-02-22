@@ -63,19 +63,22 @@ def render_email(digest: DigestResult) -> str:
         html_content.append("<p>No new items today.</p>")
 
     # --- Dropped items (for review) ---
+    # Always include this section so readers see what was found but filtered by the gate.
     total_dropped = sum(len(sec.dropped_items) for sec in digest.sections)
+    html_content.append("<h2>Dropped items (for review)</h2>")
+    html_content.append(
+        "<p>Items below were found by search but did not pass the HDC relevance quality gate. "
+        "Included so you can review what was filtered and evaluate the gate.</p>"
+    )
     if total_dropped > 0:
-        html_content.append("<h2>Dropped items (for review)</h2>")
-        html_content.append(
-            "<p>Items below were found by search but did not pass the HDC relevance quality gate. "
-            "Included so you can review what was filtered and evaluate the gate.</p>"
-        )
         for sec in digest.sections:
             if not sec.dropped_items:
                 continue
             html_content.append(f"<h3>{_escape_html(sec.name)}</h3>")
             for item in sec.dropped_items:
                 html_content.append(_render_item(item, show_quality=True))
+    else:
+        html_content.append("<p>No items were dropped by the quality gate for this run.</p>")
 
     return "".join(html_content)
 

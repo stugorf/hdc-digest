@@ -474,15 +474,20 @@ INPUT:
     gated = _extract_json(result.final_output)
     gate_duration = time.time() - gate_start
 
-    # Separate kept and dropped items
-    kept_items = [
-        it for it in gated.get("items", [])
-        if it.get("quality", {}).get("verdict") == "KEEP"
-    ]
-    dropped_items = [
-        it for it in gated.get("items", [])
-        if it.get("quality", {}).get("verdict") == "DROP"
-    ]
+    # Separate kept and dropped items. Normalize verdict (case-insensitive) so we never
+    # lose items: only explicit KEEP is kept; everything else goes to dropped (for review).
+    kept_items = []
+    dropped_items = []
+    for it in gated.get("items", []):
+        verdict = (it.get("quality") or {}).get("verdict")
+        is_keep = (
+            isinstance(verdict, str)
+            and str(verdict).strip().upper() == "KEEP"
+        )
+        if is_keep:
+            kept_items.append(it)
+        else:
+            dropped_items.append(it)
     
     gated["items"] = kept_items
     gated["dropped_items"] = dropped_items

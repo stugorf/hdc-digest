@@ -28,7 +28,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: hdc_digest.db
-          key: hdc-digest-db
+          key: hdc-digest-db-${{ github.run_id }}
+          restore-keys: |
+            hdc-digest-db-
 
       - name: Run trends analysis
         env:

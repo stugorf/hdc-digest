@@ -11,6 +11,26 @@ from .digest import DigestResult, DigestItem
 DB_PATH = Path("hdc_digest.db")
 
 
+def normalize_url(url: str) -> str:
+    """
+    Normalize URL for deduplication so the same article is not treated as different
+    when it appears with e.g. trailing slash or different scheme casing.
+    """
+    if not url or not isinstance(url, str):
+        return url or ""
+    u = url.strip()
+    if not u:
+        return u
+    # Strip trailing slash (path only; do not strip trailing slash from "https://example.com/")
+    if len(u) > 1 and u[-1] == "/" and "?" not in u and "#" not in u:
+        u = u.rstrip("/")
+    elif "?" in u:
+        base, qs = u.split("?", 1)
+        if len(base) > 1 and base[-1] == "/":
+            u = base.rstrip("/") + "?" + qs
+    return u
+
+
 def _get_db_connection() -> sqlite3.Connection:
     """Get a database connection with proper configuration."""
     conn = sqlite3.connect(DB_PATH)
@@ -58,6 +78,39 @@ def _init_db() -> None:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_source_type ON items(source_type)
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS dropped_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                published_date TEXT,
+                summary TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                publisher TEXT,
+                section_name TEXT NOT NULL,
+                quality_verdict TEXT,
+                quality_confidence TEXT,
+                quality_reason TEXT,
+                quality_json TEXT,
+                first_seen_date TEXT NOT NULL,
+                last_seen_date TEXT NOT NULL,
+                seen_count INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dropped_url ON dropped_items(url)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dropped_first_seen_date ON dropped_items(first_seen_date)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_dropped_section_name ON dropped_items(section_name)
+        """)
         
         conn.commit()
     finally:
@@ -79,25 +132,48 @@ def _db_transaction():
 
 
 def load_seen_urls() -> Set[str]:
-    """Load set of URLs that have been seen before."""
+    """Load set of normalized URLs that have been seen before (for dedup against cache/DB)."""
     _init_db()
     conn = _get_db_connection()
     try:
         cursor = conn.execute("SELECT url FROM items")
-        return {row["url"] for row in cursor.fetchall()}
+        return {normalize_url(row["url"]) for row in cursor.fetchall()}
     finally:
         conn.close()
 
 
-def filter_new(digest: DigestResult, seen_urls: Set[str]) -> DigestResult:
-    """Filter out items that have been seen before."""
+def load_seen_dropped_urls() -> Set[str]:
+    """Load set of normalized dropped-item URLs seen in previous runs."""
+    _init_db()
+    conn = _get_db_connection()
+    try:
+        cursor = conn.execute("SELECT url FROM dropped_items")
+        return {normalize_url(row["url"]) for row in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def filter_new(
+    digest: DigestResult,
+    seen_urls: Set[str],
+    seen_dropped_urls: Optional[Set[str]] = None,
+) -> DigestResult:
+    """Filter out kept and dropped items that have been seen before."""
+    dropped_seen = seen_dropped_urls or set()
     for section in digest.sections:
-        section.items = [it for it in section.items if it.url not in seen_urls]
+        section.items = [
+            it for it in section.items
+            if normalize_url(it.url) not in seen_urls
+        ]
+        section.dropped_items = [
+            it for it in section.dropped_items
+            if normalize_url(it.url) not in dropped_seen
+        ]
     return digest
 
 
 def save_items(digest: DigestResult) -> None:
-    """Save all items from digest to database with full metadata."""
+    """Save kept and dropped items from digest to database with full metadata."""
     _init_db()
     date_str = digest.date_utc
     
@@ -116,8 +192,10 @@ def save_items(digest: DigestResult) -> None:
                     quality_reason = item.quality.get("reason")
                     quality_json = json.dumps(item.quality)
                 
+                # Use normalized URL for lookups and storage so dedup is consistent
+                stored_url = normalize_url(item.url)
                 # Check if URL already exists
-                cursor = conn.execute("SELECT url, last_seen_date, seen_count FROM items WHERE url = ?", (item.url,))
+                cursor = conn.execute("SELECT url, last_seen_date, seen_count FROM items WHERE url = ?", (stored_url,))
                 existing = cursor.fetchone()
                 
                 if existing:
@@ -149,7 +227,7 @@ def save_items(digest: DigestResult) -> None:
                         quality_reason,
                         quality_json,
                         date_str,
-                        item.url,
+                        stored_url,
                     ))
                 else:
                     # Insert new record
@@ -161,7 +239,80 @@ def save_items(digest: DigestResult) -> None:
                             first_seen_date, last_seen_date, seen_count
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """, (
-                        item.url,
+                        stored_url,
+                        item.title,
+                        item.published_date or None,
+                        item.summary,
+                        item.source_type,
+                        item.publisher or None,
+                        section.name,
+                        quality_verdict,
+                        quality_confidence,
+                        quality_reason,
+                        quality_json,
+                        date_str,
+                        date_str,
+                    ))
+
+            for item in section.dropped_items:
+                quality_verdict = None
+                quality_confidence = None
+                quality_reason = None
+                quality_json = None
+
+                if item.quality:
+                    quality_verdict = item.quality.get("verdict")
+                    quality_confidence = item.quality.get("confidence")
+                    quality_reason = item.quality.get("reason")
+                    quality_json = json.dumps(item.quality)
+
+                stored_url = normalize_url(item.url)
+                cursor = conn.execute(
+                    "SELECT url FROM dropped_items WHERE url = ?",
+                    (stored_url,),
+                )
+                existing = cursor.fetchone()
+
+                if existing:
+                    conn.execute("""
+                        UPDATE dropped_items
+                        SET title = ?,
+                            published_date = ?,
+                            summary = ?,
+                            source_type = ?,
+                            publisher = ?,
+                            section_name = ?,
+                            quality_verdict = ?,
+                            quality_confidence = ?,
+                            quality_reason = ?,
+                            quality_json = ?,
+                            last_seen_date = ?,
+                            seen_count = seen_count + 1
+                        WHERE url = ?
+                    """, (
+                        item.title,
+                        item.published_date or None,
+                        item.summary,
+                        item.source_type,
+                        item.publisher or None,
+                        section.name,
+                        quality_verdict,
+                        quality_confidence,
+                        quality_reason,
+                        quality_json,
+                        date_str,
+                        stored_url,
+                    ))
+                else:
+                    conn.execute("""
+                        INSERT INTO dropped_items (
+                            url, title, published_date, summary, source_type,
+                            publisher, section_name, quality_verdict,
+                            quality_confidence, quality_reason, quality_json,
+                            first_seen_date, last_seen_date, seen_count
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """, (
+                        stored_url,
                         item.title,
                         item.published_date or None,
                         item.summary,
@@ -231,11 +382,11 @@ def get_all_items(
 
 
 def get_item_by_url(url: str) -> Optional[Dict[str, Any]]:
-    """Get a single item by URL."""
+    """Get a single item by URL (accepts any URL form; lookup uses normalized URL)."""
     _init_db()
     conn = _get_db_connection()
     try:
-        cursor = conn.execute("SELECT * FROM items WHERE url = ?", (url,))
+        cursor = conn.execute("SELECT * FROM items WHERE url = ?", (normalize_url(url),))
         row = cursor.fetchone()
         return dict(row) if row else None
     finally:

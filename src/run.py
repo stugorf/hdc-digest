@@ -5,7 +5,7 @@ import sys
 import webbrowser
 from pathlib import Path
 from .digest import run_digest
-from .store import load_seen_urls, filter_new, save_items
+from .store import load_seen_urls, load_seen_dropped_urls, filter_new, save_items
 from .emailer import send_digest_email, send_error_email, render_email
 
 # Configure logging
@@ -45,10 +45,24 @@ def main():
         # Filter out already-seen items
         logger.info("Filtering already-seen items...")
         seen_urls = load_seen_urls()
+        seen_dropped_urls = load_seen_dropped_urls()
         initial_count = sum(len(s.items) for s in digest.sections)
-        digest = filter_new(digest, seen_urls)
+        initial_dropped_count = sum(len(s.dropped_items) for s in digest.sections)
+        digest = filter_new(digest, seen_urls, seen_dropped_urls)
         new_count = sum(len(s.items) for s in digest.sections)
-        logger.info(f"Filtered items: {initial_count} -> {new_count} (removed {initial_count - new_count} duplicates)")
+        new_dropped_count = sum(len(s.dropped_items) for s in digest.sections)
+        logger.info(
+            "Filtered kept items: %s -> %s (removed %s duplicates)",
+            initial_count,
+            new_count,
+            initial_count - new_count,
+        )
+        logger.info(
+            "Filtered dropped items: %s -> %s (removed %s duplicates)",
+            initial_dropped_count,
+            new_dropped_count,
+            initial_dropped_count - new_dropped_count,
+        )
 
         # Save all items (new and existing) to SQLite database with full metadata
         logger.info("Saving items to database...")
